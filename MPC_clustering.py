@@ -20,19 +20,19 @@ class Network(object):
     def init_states(self):
         #===== Node parameters ======
         self.grid_distance = 10                     # The network is divided into numerous of grids, each grid contains a node
-        self.grid_xcor_node_number = 10              # Number of girds/nodes in x axis
-        self.grid_ycor_node_number = 10              # Number of grids/nodes in y axis
+        self.grid_xcor_node_number = 4              # Number of girds/nodes in x axis
+        self.grid_ycor_node_number = 4              # Number of grids/nodes in y axis
         self.node_number = self.grid_xcor_node_number*self.grid_ycor_node_number    # Total nodes num except the sink
         self.server_number = 1                      # NUm of sink node
 
-        self.transmit_range = 13
+        self.transmit_range = 15
         self.transmit_energy = 10
-        self.min_distance_between_nodes = 8
-        self.deploy_range_x = (self.grid_xcor_node_number - 1) * self.grid_distance     # Range of network in x axis
-        self.deploy_range_y = (self.grid_ycor_node_number - 1) * self.grid_distance     # Range of network in y axis
+        self.min_distance_between_nodes = 7
+        self.deploy_range_x = self.grid_xcor_node_number * self.grid_distance     # Range of network in x axis
+        self.deploy_range_y = self.grid_ycor_node_number * self.grid_distance     # Range of network in y axis
 
         #===== Network initialization parameters =====
-        self.max_find_good_position_time = 3
+        self.max_find_good_position_time = 5
 
         #===== Network positions storage =====
         self.state_G = nx.Graph()
@@ -81,7 +81,7 @@ class Network(object):
         good_position = 1
         ax = self.state_xcor[node_id]
         ay = self.state_ycor[node_id]
-        for j in range(1, len(self.state_xcor)-1):
+        for j in range(0, len(self.state_xcor)-1):
             bx = self.state_xcor[j]
             by = self.state_ycor[j]
             distance = ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
@@ -158,7 +158,7 @@ class MPC_network(Network):
         #===== Workload parameters =====
         self.time = 0
         self.reuse = reuse
-        self.sampling_period = 20
+        self.sampling_period = 15
         self.MPC_connectivity = np.zeros((self.node_number+self.server_number, self.node_number+self.server_number), dtype=int)
 
         #===== Performacne analysis parameters =====
@@ -166,6 +166,7 @@ class MPC_network(Network):
         self.fine_throughput = []
         self.transmit_delay = []
         self.mean_delay = []
+        self.traffic = []
 
         if self.reuse:
             self.reuse_network()
@@ -178,7 +179,8 @@ class MPC_network(Network):
             self.node_object[str(i)]= Node(i)
 
         for i in range(1, self.node_number+self.server_number):
-            self.node_object[str(i)].sampling_time = random.randint(0, 10)
+            self.node_object[str(i)].sampling_time = random.randint(0, 5)
+            self.traffic.append(0)
         #for i in range(1, 4):
             #self.node_object[str(i)].sampling_time = 0
 
@@ -310,6 +312,7 @@ class MPC_network(Network):
 
     def performance_analysis(self):
         self.sink_node_analysis()
+        self.network_analysis()
 
     def sink_node_analysis(self):
         # Calculate data throughput
@@ -337,6 +340,10 @@ class MPC_network(Network):
                 self.node_object[str(0)].pending_queue.remove(tmp_pend)
         self.mean_delay[-1] = np.mean(self.transmit_delay) if self.transmit_delay else 0
 
+    def network_analysis(self):
+        for i in range(0, self.node_number):
+            self.traffic[i] = len(self.node_object[str(i+1)].send_queue)
+
     def _debug(self):
         print("===============" + "TIME: "+ str(self.time) + "==================")
         print(self.raw_throughput, self.fine_throughput, self.transmit_delay)
@@ -350,19 +357,26 @@ class MPC_network(Network):
     def _plot(self):
         plt.ion()
         plt.clf()
-        graph1= plt.subplot(2, 1, 1)
+        graph1= plt.subplot(3, 1, 1)
         graph1.set_title('Data Throughput')
         graph1.set_xlabel('Time', fontsize=10)
         graph1.set_ylabel('Packets Num', fontsize=10)
-        ax = [n for n in range(self.time)]
-        plt.plot(ax, self.raw_throughput, 'g-')
+        x1 = [n for n in range(self.time)]
+        plt.plot(x1, self.raw_throughput, 'g-')
 
-        graph2 = plt.subplot(2, 1, 2)
+        graph2 = plt.subplot(3, 1, 2)
         graph2.set_title("Packet Delay")
         graph2.set_xlabel('Time', fontsize=10)
         graph2.set_ylabel('Average Packets Delay', fontsize=10)
-        plt.plot(ax, self.mean_delay, 'r-')
+        plt.plot(x1, self.mean_delay, 'r-')
 
+        graph3 = plt.subplot(3, 1, 3, ylim=((0, 5)), xticks=np.arange(0, self.node_number+1, 1))
+        graph3.set_title("Node traffic")
+        graph3.set_xlabel('Node ID', fontsize=10)
+        graph3.set_ylabel('Num packet to be sent', fontsize=10)
+        x3 = [n for n in range(self.server_number, self.node_number+self.server_number)]
+        plt.bar(x3, self.traffic, color="blue")
+        plt.subplots_adjust(wspace=0, hspace=0.9)
         plt.pause(0.1)
 
 
@@ -370,6 +384,7 @@ class MPC_network(Network):
         '''
         Simulate network transmission within given time steps
         '''
+        plt.figure(figsize=(8, 6))
         while self.time <= time_scope:
             self.generate_source()
             self.parse_send_queue()
@@ -399,9 +414,7 @@ class MPC_network(Network):
         self.set_graph()
 
 if __name__ == "__main__":
-    #net = MPC_network(reuse=True)
-    #net.operate(50)
-    #net.draw_network()
-    #net.store_network()
-    net = Network()
+    net = MPC_network(reuse=True)
+    net.operate(100)
     net.draw_network()
+    #net.store_network()
