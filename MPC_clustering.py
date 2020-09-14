@@ -19,27 +19,34 @@ class Network(object):
 
     def init_states(self):
         #===== Node parameters ======
-        self.node_number = 49
-        self.server_number = 1
-        self.transmit_range = 5
+        self.grid_distance = 10                     # The network is divided into numerous of grids, each grid contains a node
+        self.grid_xcor_node_number = 10              # Number of girds/nodes in x axis
+        self.grid_ycor_node_number = 10              # Number of grids/nodes in y axis
+        self.node_number = self.grid_xcor_node_number*self.grid_ycor_node_number    # Total nodes num except the sink
+        self.server_number = 1                      # NUm of sink node
+
+        self.transmit_range = 13
         self.transmit_energy = 10
-        self.min_distance_between_nodes = 7
-        self.grid_xcor_node_number = 3
-        self.grid_ycor_node_number = 3
-        self.grid_distance = 10
-        self.deploy_range_x = (self.grid_xcor_node_number - 1) * self.grid_distance
-        self.deploy_range_y = (self.grid_ycor_node_number - 1) * self.grid_distance
+        self.min_distance_between_nodes = 8
+        self.deploy_range_x = (self.grid_xcor_node_number - 1) * self.grid_distance     # Range of network in x axis
+        self.deploy_range_y = (self.grid_ycor_node_number - 1) * self.grid_distance     # Range of network in y axis
 
         #===== Network initialization parameters =====
         self.max_find_good_position_time = 3
 
-
-        #===== Network positions =====
+        #===== Network positions storage =====
         self.state_G = nx.Graph()
         self.state_G_no_sink = nx.Graph()
         self.state_xcor = []
         self.state_ycor = []
         self.state_link = []
+
+    def setup_network(self):
+        # Initiate node positions
+        self.set_network_topology()
+        # Ensure the graph is fully connected
+        while self.all_nodes_connected() == False:
+            self.set_network_topology()
 
     def all_nodes_connected(self):
         for i in range(0, self.node_number + self.server_number):
@@ -49,39 +56,32 @@ class Network(object):
                     return False
         return True
 
-    def setup_network(self):
-        # Initiate node positions
-        self.set_network_topology()
-        # Ensure the graph is fully connected
-        while self.all_nodes_connected() == False:
-            self.set_network_topology()
-
     def set_network_topology(self):
         self.state_xcor = []
         self.state_ycor = []
-        for i in range(0, self.node_number+self.server_number):
-            self.state_xcor.append(0)
-            self.state_ycor.append(0)
 
         self.scatter_node_random_position()
         self.set_network_connectivity()
 
     def scatter_node_random_position(self):
-        self.state_xcor[0] = self.deploy_range_x/2
-        self.state_ycor[0] = self.deploy_range_y/2
-        for i in range(0, self.node_number):
-                good_position = 0
-                for find_good_position_time in range(0, self.max_find_good_position_time):
-                    if good_position == 0:
-                        self.state_xcor[i+1] = random.random() * self.deploy_range_x
-                        self.state_ycor[i+1] = random.random() * self.deploy_range_y
-                        good_position = self.check_neighbor_distance(i+1)
+        self.state_xcor.append(self.deploy_range_x/2)
+        self.state_ycor.append(self.deploy_range_y/2)
+        for i in range(0, self.grid_xcor_node_number):
+            for j in range(0, self.grid_ycor_node_number):
+                self.state_xcor.append(0)
+                self.state_ycor.append(0)
+                for k in range(0, self.max_find_good_position_time):
+                    self.state_xcor[-1] = random.random() * self.grid_distance + i*self.grid_distance
+                    self.state_ycor[-1] = random.random() * self.grid_distance + j*self.grid_distance
+                    good_position = self.check_neighbor_distance(i+1)
+                    if good_position == 1:
+                        break
 
     def check_neighbor_distance(self, node_id):
         good_position = 1
         ax = self.state_xcor[node_id]
         ay = self.state_ycor[node_id]
-        for j in range(0, node_id):
+        for j in range(1, len(self.state_xcor)-1):
             bx = self.state_xcor[j]
             by = self.state_ycor[j]
             distance = ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
