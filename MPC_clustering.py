@@ -1,11 +1,13 @@
-import os
 import numpy as np
 import random
 import copy
-import json
-import math
 import networkx as nx
+import pandas as pd
 import matplotlib.pyplot as plt
+
+GRID_DISTANCE = 10         # The network is divided into numerous of grids, each grid contains one node
+GRID_NODE_NUM_X = 4        # Number of girds/nodes in x axis
+GRID_NODE_NUM_Y = 4        # Number of grids/nodes in y axis
 
 
 class Network(object):
@@ -14,27 +16,23 @@ class Network(object):
     Define node parameters and mesh topology
     """
     def __init__(self):
-        self.init_states()
-        self.setup_network()
-
-    def init_states(self):
-        #===== Node parameters ======
-        self.grid_distance = 10                     # The network is divided into numerous of grids, each grid contains a node
-        self.grid_xcor_node_number = 4              # Number of girds/nodes in x axis
-        self.grid_ycor_node_number = 4              # Number of grids/nodes in y axis
+        """====== Node parameters ======"""
+        self.grid_distance = GRID_DISTANCE
+        self.grid_xcor_node_number = GRID_NODE_NUM_X
+        self.grid_ycor_node_number = GRID_NODE_NUM_Y
         self.node_number = self.grid_xcor_node_number*self.grid_ycor_node_number    # Total nodes num except the sink
-        self.server_number = 1                      # NUm of sink node
+        self.server_number = 1                                            # Num of sink node
 
         self.transmit_range = 15
-        self.transmit_energy = 10
+        self.transmit_energy = 50
         self.min_distance_between_nodes = 7
         self.deploy_range_x = self.grid_xcor_node_number * self.grid_distance     # Range of network in x axis
         self.deploy_range_y = self.grid_ycor_node_number * self.grid_distance     # Range of network in y axis
 
-        #===== Network initialization parameters =====
+        """"======= Network initialization parameters ======="""
         self.max_find_good_position_time = 5
 
-        #===== Network positions storage =====
+        """"======= Network positions storage ======="""
         self.state_G = nx.Graph()
         self.state_G_no_sink = nx.Graph()
         self.state_xcor = []
@@ -45,32 +43,32 @@ class Network(object):
         # Initiate node positions
         self.set_network_topology()
         # Ensure the graph is fully connected
-        while self.all_nodes_connected() == False:
+        while not self.all_nodes_connected():
             self.set_network_topology()
 
     def all_nodes_connected(self):
         for i in range(0, self.node_number + self.server_number):
             for j in range(0, self.node_number + self.server_number):
                 check = nx.has_path(self.state_G, i, j)
-                if check == False:
+                if not check:
                     return False
         return True
 
     def set_network_topology(self):
-        self.state_xcor = []
-        self.state_ycor = []
-
         self.scatter_node_random_position()
         self.set_network_connectivity()
+        self.set_graph()
 
     def scatter_node_random_position(self):
+        self.state_xcor.clear()
+        self.state_ycor.clear()
         self.state_xcor.append(self.deploy_range_x/2)
-        self.state_ycor.append(self.deploy_range_y/2)
+        self.state_ycor.append(self.deploy_range_y/2)       # Set sink node position
         for i in range(0, self.grid_xcor_node_number):
-            for j in range(0, self.grid_ycor_node_number):
+            for j in range(0, self.grid_ycor_node_number):  # Set other nodes positions
                 self.state_xcor.append(0)
                 self.state_ycor.append(0)
-                for k in range(0, self.max_find_good_position_time):
+                for k in range(0, self.max_find_good_position_time):    # Constrain the distance between nodes
                     self.state_xcor[-1] = random.random() * self.grid_distance + i*self.grid_distance
                     self.state_ycor[-1] = random.random() * self.grid_distance + j*self.grid_distance
                     good_position = self.check_neighbor_distance(i+1)
@@ -90,19 +88,20 @@ class Network(object):
         return good_position
 
     def set_network_connectivity(self):
-        self.state_link = []
+        self.state_link.clear()
         for i in range(0, self.node_number + self.server_number):
             node_link = []
             for j in range(0, self.node_number + self.server_number):
-                if i!=j and ((self.state_xcor[i]-self.state_xcor[j])**2 + (self.state_ycor[i]-self.state_ycor[j])**2)**0.5 <= self.transmit_range:
+                distance = ((self.state_xcor[i]-self.state_xcor[j])**2 +
+                            (self.state_ycor[i]-self.state_ycor[j])**2)**0.5
+                if (i != j) and (distance <= self.transmit_range):
                     node_link.append(1)
                 else:
                     node_link.append(0)
             self.state_link.append(node_link)
-        self.set_graph()
 
     def set_graph(self):
-        self.state_G = nx.Graph()
+        self.state_G.clear()
         for i in range(0, self.node_number + self.server_number):
             self.state_G.add_node(i, pos=(self.state_xcor[i], self.state_ycor[i]))
         for i in range(0, self.node_number + self.server_number):
@@ -112,56 +111,48 @@ class Network(object):
         self.state_G_no_sink = self.state_G.copy()
         self.state_G_no_sink.remove_node(0)
 
-
     def draw_network(self):
-        labeldict = {}
-        for i in range(0, self.node_number + self.server_number):
-            #labeldict[i] = str(i) " | " + str(self.state_cluster_id[i])
-            labeldict[i] = str(i)
-
-        #pos = nx.kamada_kawai_layout(self.state_G)
         pos = nx.get_node_attributes(self.state_G, 'pos')
-        #print(pos)
         nx.draw(self.state_G, pos, with_labels=True, cmap=plt.get_cmap('Accent'),
                 node_color='g', node_size=100)
         plt.show()
 
     def store_network(self):
-        #nx.write_gml(self.state_G, "my_network")
-        np.save("x_cor.npy", np.array(self.state_xcor))
-        np.save("y_cor.npy", np.array(self.state_ycor))
-        np.save("link.npy", np.array(self.state_link))
+        np.save("x_cor.npy", np.array(self.state_xcor[:]))
+        np.save("y_cor.npy", np.array(self.state_ycor[:]))
+        np.save("link.npy", np.array(self.state_link[:]))
 
     def reuse_network(self):
-        #self.state_G = nx.Graph()
-        #self.state_G = nx.read_gml("my_network")
         self.state_xcor = np.load("x_cor.npy").tolist()
         self.state_ycor = np.load("y_cor.npy").tolist()
         self.state_link = np.load("link.npy").tolist()
         self.set_graph()
 
+
 class Node(object):
-    def __init__(self, id):
-        self.node_id = id
+    def __init__(self, node_id):
+        self.node_id = node_id
         self.node_energy = 5000
 
-        self.receive_queue= []
+        self.receive_queue = []
         self.send_queue = []
         self.pending_queue = []
         self.sleep_mode = 0
 
         self.sampling_time = -1
 
-class MPC_network(Network):
+
+class MPCNetwork(Network):
     def __init__(self, reuse=False):
-        Network.__init__(self)
-        #===== Workload parameters =====
+        super(MPCNetwork, self).__init__()
+        """======= Workload parameters ======="""
         self.time = 0
         self.reuse = reuse
         self.sampling_period = 15
-        self.MPC_connectivity = np.zeros((self.node_number+self.server_number, self.node_number+self.server_number), dtype=int)
+        self.MPC_connectivity = np.zeros((self.node_number+self.server_number, self.node_number+self.server_number),
+                                         dtype=int)
 
-        #===== Performacne analysis parameters =====
+        """======= Performance analysis parameters ======="""
         self.raw_throughput = []
         self.fine_throughput = []
         self.transmit_delay = []
@@ -170,42 +161,42 @@ class MPC_network(Network):
 
         if self.reuse:
             self.reuse_network()
+        else:
+            self.setup_network()
+            self.init_MPC()
+
         self.init_node()
-        self.init_MPC()
 
     def init_node(self):
         self.node_object = {}
         for i in range(0, self.node_number + self.server_number):
-            self.node_object[str(i)]= Node(i)
+            self.node_object[str(i)] = Node(i)
 
         for i in range(1, self.node_number+self.server_number):
             self.node_object[str(i)].sampling_time = random.randint(0, 5)
             self.traffic.append(0)
-        #for i in range(1, 4):
-            #self.node_object[str(i)].sampling_time = 0
 
     def init_MPC(self):
         # Find a one-hop neighbor for each node to initialize MPC connectivity matrix
-        if not self.reuse:
-            for i in range(1, self.node_number+self.server_number):
-                nei = [n for n in self.state_G.neighbors(i)]
-                if 0 in nei: nei.remove(0)
-                #print("Node " + str(i))
-                #print(nei)
-                rand = random.randint(0, len(nei)-1)
-                self.MPC_connectivity[i, nei[rand]] = 1
-            #print(self.MPC_connectivity)
+        self.MPC_connectivity = np.zeros((self.node_number+self.server_number, self.node_number+self.server_number),
+                                         dtype=int)
+        for i in range(1, self.node_number+self.server_number):
+            nei = [n for n in self.state_G.neighbors(i)]
+            if 0 in nei:
+                nei.remove(0)
+            rand = random.randint(0, len(nei)-1)
+            self.MPC_connectivity[i, nei[rand]] = 1
 
     def find_route(self, s, t):
         if t == 0:
             check = nx.has_path(self.state_G, source=s, target=t)
-            if check == True:
+            if check:
                 path = nx.dijkstra_path(self.state_G, source=s, target=t)
             else:
                 path = []
         else:
             check = nx.has_path(self.state_G_no_sink, source=s, target=t)
-            if check == True:
+            if check:
                 path = nx.dijkstra_path(self.state_G_no_sink, source=s, target=t)
             else:
                 path = []
@@ -217,19 +208,19 @@ class MPC_network(Network):
         # [ [MPC_num, TYPE, R], [s, t, ST, ET], [[ROUTE}, i]] ]
         for i in range(1, self.node_number+self.server_number):
             if self.node_object[str(i)].sampling_time == self.time:
-                MPC_num = list(self.MPC_connectivity[i]).count(1)   # Number of sharing nodes
-                type = 1                                            # 0:to the sink; 1:MPC_ping 2:MPC_pong
-                MPC_rec =  0                                        # Number of received pong messages
+                num_MPC = list(self.MPC_connectivity[i]).count(1)   # Number of sharing nodes
+                type_packet = 1                                     # 0:to the sink; 1:MPC_ping 2:MPC_pong
+                rec_MPC = 0                                        # Number of received pong messages
                 s = i                                               # Source node id
                 st = self.time                                      # Start time
                 et = -1                                             # End time
-                for j in range(MPC_num):
+                for j in range(num_MPC):
                     t = list(self.MPC_connectivity[i]).index(1, j)  # Target node
                     route = self.find_route(s, t)
-                    packet = [[MPC_num, type, MPC_rec], [s, t, st, et], [route, 1]]
+                    packet = [[num_MPC, type_packet, rec_MPC], [s, t, st, et], [route, 1]]
                     self.node_object[str(i)].send_queue.append(packet)
                 self.node_object[str(i)].sampling_time += self.sampling_period
-                #print(self.node_object[str(i)].send_queue)
+        self.network_analysis()
 
     def parse_send_queue(self):
         for i in range(1, self.node_number+self.server_number):
@@ -312,7 +303,7 @@ class MPC_network(Network):
 
     def performance_analysis(self):
         self.sink_node_analysis()
-        self.network_analysis()
+        #self.network_analysis()
 
     def sink_node_analysis(self):
         # Calculate data throughput
@@ -342,10 +333,10 @@ class MPC_network(Network):
 
     def network_analysis(self):
         for i in range(0, self.node_number):
-            self.traffic[i] = len(self.node_object[str(i+1)].send_queue)
+            self.traffic[i] += len(self.node_object[str(i+1)].send_queue)
 
     def _debug(self):
-        print("===============" + "TIME: "+ str(self.time) + "==================")
+        print("===============" + "TIME: " + str(self.time) + "==================")
         print(self.raw_throughput, self.fine_throughput, self.transmit_delay)
         '''for i in range(0, self.node_number+self.server_number):
             self.node_object[str(i)].sleep_mode = 0
@@ -357,34 +348,44 @@ class MPC_network(Network):
     def _plot(self):
         plt.ion()
         plt.clf()
-        graph1= plt.subplot(3, 1, 1)
+        graph1 = plt.subplot(2, 2, 1)
         graph1.set_title('Data Throughput')
         graph1.set_xlabel('Time', fontsize=10)
         graph1.set_ylabel('Packets Num', fontsize=10)
         x1 = [n for n in range(self.time)]
         plt.plot(x1, self.raw_throughput, 'g-')
 
-        graph2 = plt.subplot(3, 1, 2)
+        graph2 = plt.subplot(2, 2, 2)
         graph2.set_title("Packet Delay")
         graph2.set_xlabel('Time', fontsize=10)
         graph2.set_ylabel('Average Packets Delay', fontsize=10)
         plt.plot(x1, self.mean_delay, 'r-')
 
-        graph3 = plt.subplot(3, 1, 3, ylim=((0, 5)), xticks=np.arange(0, self.node_number+1, 1))
+        graph3 = plt.subplot(2, 2, 3, ylim=(0, 200), xticks=np.arange(0, self.node_number+1, 1))
         graph3.set_title("Node traffic")
         graph3.set_xlabel('Node ID', fontsize=10)
         graph3.set_ylabel('Num packet to be sent', fontsize=10)
         x3 = [n for n in range(self.server_number, self.node_number+self.server_number)]
         plt.bar(x3, self.traffic, color="blue")
-        plt.subplots_adjust(wspace=0, hspace=0.9)
+
+        graph4 = plt.subplot(2, 2, 4, ylim=(0, 5000), xticks=np.arange(0, self.node_number+1, 1))
+        graph4.set_title("Node energy")
+        graph4.set_xlabel('Node ID', fontsize=10)
+        graph4.set_ylabel('Available energy', fontsize=10)
+        x4 = [n for n in range(self.server_number, self.node_number+self.server_number)]
+        y4 = [0] * self.node_number
+        for i in range(self.server_number, self.node_number+self.server_number):
+            y4[i-self.server_number] = self.node_object[str(i)].node_energy
+        plt.bar(x4, y4, color="green")
+
+        plt.subplots_adjust(wspace=0.5, hspace=0.5)
         plt.pause(0.1)
 
-
     def operate(self, time_scope):
-        '''
+        """
         Simulate network transmission within given time steps
-        '''
-        plt.figure(figsize=(8, 6))
+        """
+        plt.figure(figsize=(10, 10))
         while self.time <= time_scope:
             self.generate_source()
             self.parse_send_queue()
@@ -398,23 +399,21 @@ class MPC_network(Network):
         plt.show()
 
     def store_network(self):
-        #nx.write_gml(self.state_G, "my_network")
-        np.save("x_cor.npy", np.array(self.state_xcor))
-        np.save("y_cor.npy", np.array(self.state_ycor))
-        np.save("link.npy", np.array(self.state_link))
-        np.save("mpc_connectivity.npy", np.array(self.MPC_connectivity))
+        np.save("x_cor.npy", np.array(self.state_xcor[:]))
+        np.save("y_cor.npy", np.array(self.state_ycor[:]))
+        np.save("link.npy", np.array(self.state_link[:]))
+        np.save("mpc_connectivity.npy", np.array(self.MPC_connectivity[:]))
 
     def reuse_network(self):
-        #self.state_G = nx.Graph()
-        #self.state_G = nx.read_gml("my_network")
         self.state_xcor = np.load("x_cor.npy").tolist()
         self.state_ycor = np.load("y_cor.npy").tolist()
         self.state_link = np.load("link.npy").tolist()
         self.MPC_connectivity = np.load("mpc_connectivity.npy").tolist()
         self.set_graph()
 
+
 if __name__ == "__main__":
-    net = MPC_network(reuse=True)
-    net.operate(100)
+    net = MPCNetwork(reuse=False)
+    net.operate(50)
     net.draw_network()
     #net.store_network()
