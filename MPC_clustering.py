@@ -112,6 +112,7 @@ class Network(object):
         self.state_G_no_sink.remove_node(0)
 
     def draw_network(self):
+        plt.figure(1)
         pos = nx.get_node_attributes(self.state_G, 'pos')
         nx.draw(self.state_G, pos, with_labels=True, cmap=plt.get_cmap('Accent'),
                 node_color='g', node_size=100)
@@ -141,42 +142,57 @@ class Node(object):
 
         self.sampling_time = -1
 
+    def reset(self):
+        self.node_energy = 5000
+        self.receive_queue.clear()
+        self.send_queue.clear()
+        self.pending_queue.clear()
+        self.sleep_mode = 0
 
-class MPCNetwork(Network):
-    def __init__(self, reuse=False):
-        super(MPCNetwork, self).__init__()
+        self.sampling_time = -1
+
+
+class NetworkMPC(Network):
+    def __init__(self, time_scope, reuse=False):
+        super(NetworkMPC, self).__init__()
         """======= Workload parameters ======="""
         self.time = 0
         self.reuse = reuse
         self.sampling_period = 15
         self.MPC_connectivity = np.zeros((self.node_number+self.server_number, self.node_number+self.server_number),
                                          dtype=int)
+        self.time_scope = time_scope
 
         """======= Performance analysis parameters ======="""
+        #self.sink_analysis = pd.DataFrame(index=list(np.arange(0, time_scope)),
+                                          #columns=["raw_throughput", "fine_throughput", "transmit_delay"])
         self.raw_throughput = []
         self.fine_throughput = []
         self.transmit_delay = []
         self.mean_delay = []
         self.traffic = []
 
+        '''
         if self.reuse:
             self.reuse_network()
         else:
             self.setup_network()
-            self.init_MPC()
+            self.init_mpc()
+        '''
 
-        self.init_node()
-
-    def init_node(self):
+        self.setup_network()
         self.node_object = {}
         for i in range(0, self.node_number + self.server_number):
             self.node_object[str(i)] = Node(i)
+        self.init_node()
+        self.init_mpc()
 
+    def init_node(self):
         for i in range(1, self.node_number+self.server_number):
             self.node_object[str(i)].sampling_time = random.randint(0, 5)
             self.traffic.append(0)
 
-    def init_MPC(self):
+    def init_mpc(self):
         # Find a one-hop neighbor for each node to initialize MPC connectivity matrix
         self.MPC_connectivity = np.zeros((self.node_number+self.server_number, self.node_number+self.server_number),
                                          dtype=int)
@@ -208,16 +224,16 @@ class MPCNetwork(Network):
         # [ [MPC_num, TYPE, R], [s, t, ST, ET], [[ROUTE}, i]] ]
         for i in range(1, self.node_number+self.server_number):
             if self.node_object[str(i)].sampling_time == self.time:
-                num_MPC = list(self.MPC_connectivity[i]).count(1)   # Number of sharing nodes
+                num_mpc = list(self.MPC_connectivity[i]).count(1)   # Number of sharing nodes
                 type_packet = 1                                     # 0:to the sink; 1:MPC_ping 2:MPC_pong
-                rec_MPC = 0                                        # Number of received pong messages
+                rec_mpc = 0                                        # Number of received pong messages
                 s = i                                               # Source node id
                 st = self.time                                      # Start time
                 et = -1                                             # End time
-                for j in range(num_MPC):
+                for j in range(num_mpc):
                     t = list(self.MPC_connectivity[i]).index(1, j)  # Target node
                     route = self.find_route(s, t)
-                    packet = [[num_MPC, type_packet, rec_MPC], [s, t, st, et], [route, 1]]
+                    packet = [[num_mpc, type_packet, rec_mpc], [s, t, st, et], [route, 1]]
                     self.node_object[str(i)].send_queue.append(packet)
                 self.node_object[str(i)].sampling_time += self.sampling_period
         self.network_analysis()
@@ -277,11 +293,11 @@ class MPCNetwork(Network):
                         self.node_object[str(i)].send_queue.append(tmp_receive)
                     elif tmp_receive[0][1] == 2:
                         # Check the type of packet, if TYPE = 2
-                        has_rece = 0
+                        has_rece = False
                         for tmp_pend in self.node_object[str(i)].pending_queue:
                             if tmp_receive[2][0] == tmp_pend[2][0]:
                                 tmp_pend[0][2] += 1
-                                has_rece = 1
+                                has_rece = True
                                 break
                         if not has_rece:
                             tmp_receive[0][2] = 1
@@ -346,7 +362,6 @@ class MPCNetwork(Network):
             print(self.node_object[str(i)].pending_queue)
             '''
     def _plot(self):
-        plt.ion()
         plt.clf()
         graph1 = plt.subplot(2, 2, 1)
         graph1.set_title('Data Throughput')
@@ -381,12 +396,12 @@ class MPCNetwork(Network):
         plt.subplots_adjust(wspace=0.5, hspace=0.5)
         plt.pause(0.1)
 
-    def operate(self, time_scope):
+    def operate(self):
         """
         Simulate network transmission within given time steps
         """
-        plt.figure(figsize=(10, 10))
-        while self.time <= time_scope:
+        plt.figure(2, figsize=(9, 9))
+        while self.time < self.time_scope:
             self.generate_source()
             self.parse_send_queue()
             self.parse_received_queue()
@@ -395,8 +410,6 @@ class MPCNetwork(Network):
 
             #self._debug()
             self._plot()
-        plt.ioff()
-        plt.show()
 
     def store_network(self):
         np.save("x_cor.npy", np.array(self.state_xcor[:]))
@@ -411,9 +424,29 @@ class MPCNetwork(Network):
         self.MPC_connectivity = np.load("mpc_connectivity.npy").tolist()
         self.set_graph()
 
+    def reset_network(self):
+        self.time = 0
+        self.MPC_connectivity.fill(0)
+
+        """======= Performance analysis parameters ======="""
+        self.raw_throughput.clear()
+        self.fine_throughput.clear()
+        self.transmit_delay.clear()
+        self.mean_delay.clear()
+        self.traffic.clear()
+
+        for i in range(0, self.node_number + self.server_number):
+            self.node_object[str(i)].reset()
+        self.init_node()
+        self.init_mpc()
+
 
 if __name__ == "__main__":
-    net = MPCNetwork(reuse=False)
-    net.operate(50)
-    net.draw_network()
+    net = NetworkMPC(10)
+    for episod in range(0, 2):
+        plt.ion()
+        net.draw_network()
+        net.reset_network()
+        net.operate()
+        plt.ioff()
     #net.store_network()
