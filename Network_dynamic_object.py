@@ -2,12 +2,11 @@ import numpy as np
 import random
 import copy
 import networkx as nx
-import pandas as pd
 import matplotlib.pyplot as plt
 
 GRID_DISTANCE = 10         # The network is divided into numerous of grids, each grid contains one node
-GRID_NODE_NUM_X = 4        # Number of girds/nodes in x axis
-GRID_NODE_NUM_Y = 4        # Number of grids/nodes in y axis
+GRID_NODE_NUM_X = 5        # Number of girds/nodes in x axis
+GRID_NODE_NUM_Y = 2        # Number of grids/nodes in y axis
 
 
 class Network(object):
@@ -24,7 +23,7 @@ class Network(object):
         self.server_number = 1                                            # Num of sink node
 
         self.transmit_range = 15
-        self.transmit_energy = 50
+        self.transmit_energy = 5
         self.min_distance_between_nodes = 7
         self.deploy_range_x = self.grid_xcor_node_number * self.grid_distance     # Range of network in x axis
         self.deploy_range_y = self.grid_ycor_node_number * self.grid_distance     # Range of network in y axis
@@ -153,15 +152,14 @@ class Node(object):
 
 
 class NetworkMPC(Network):
-    def __init__(self, time_scope, reuse=False):
+    def __init__(self, reuse=False):
         super(NetworkMPC, self).__init__()
         """======= Workload parameters ======="""
         self.time = 0
         self.reuse = reuse
-        self.sampling_period = 15
+        self.sampling_period = 50
         self.MPC_connectivity = np.zeros((self.node_number+self.server_number, self.node_number+self.server_number),
                                          dtype=int)
-        self.time_scope = time_scope
 
         """======= Performance analysis parameters ======="""
         #self.sink_analysis = pd.DataFrame(index=list(np.arange(0, time_scope)),
@@ -171,6 +169,10 @@ class NetworkMPC(Network):
         self.transmit_delay = []
         self.mean_delay = []
         self.traffic = []
+        self.act_sapce = [0, 1, 2, 3, 4, 5]
+        self.traffic_space = [n for n in range(0, self.node_number)]
+        self.traffic_space = (self.traffic_space - np.mean(self.traffic_space)) / self.node_number
+        self.act_hist = np.ones(self.node_number)
 
         '''
         if self.reuse:
@@ -189,7 +191,8 @@ class NetworkMPC(Network):
 
     def init_node(self):
         for i in range(1, self.node_number+self.server_number):
-            self.node_object[str(i)].sampling_time = random.randint(0, 5)
+            #self.node_object[str(i)].sampling_time = random.randint(0, 5)
+            self.node_object[str(i)].sampling_time = 0
             self.traffic.append(0)
 
     def init_mpc(self):
@@ -226,7 +229,7 @@ class NetworkMPC(Network):
             if self.node_object[str(i)].sampling_time == self.time:
                 num_mpc = list(self.MPC_connectivity[i]).count(1)   # Number of sharing nodes
                 type_packet = 1                                     # 0:to the sink; 1:MPC_ping 2:MPC_pong
-                rec_mpc = 0                                        # Number of received pong messages
+                rec_mpc = 0                                         # Number of received pong messages
                 s = i                                               # Source node id
                 st = self.time                                      # Start time
                 et = -1                                             # End time
@@ -235,28 +238,32 @@ class NetworkMPC(Network):
                     route = self.find_route(s, t)
                     packet = [[num_mpc, type_packet, rec_mpc], [s, t, st, et], [route, 1]]
                     self.node_object[str(i)].send_queue.append(packet)
+                if num_mpc == 0:
+                    type_packet = 0
+                    t = 0
+                    route = self.find_route(s, t)
+                    packet = [[num_mpc, type_packet, rec_mpc], [s, t, st, et], [route, 1]]
+                    self.node_object[str(i)].send_queue.append(packet)
                 self.node_object[str(i)].sampling_time += self.sampling_period
-        self.network_analysis()
 
     def parse_send_queue(self):
         for i in range(1, self.node_number+self.server_number):
             # Check if itself is in sleep mode
             if self.node_object[str(i)].sleep_mode != 1:
                 for tmp_send in self.node_object[str(i)].send_queue[:]:
+                    index = tmp_send[2][1]
+                    target_id = tmp_send[2][0][index]
                     # If the target node is the sink, receive the packet
-                    if tmp_send[1][1] == 0:
+                    if target_id == 0:
                         self.node_object[str(0)].receive_queue.append(tmp_send)
                         self.node_object[str(i)].send_queue.remove(tmp_send)
-                        self.node_object[str(i)].sleep_mode = 1
+                        #self.node_object[str(i)].sleep_mode = 1
                         self.node_object[str(i)].node_energy -= self.transmit_energy
-                        break
                     else:
-                        index = tmp_send[2][1]
-                        target_id = tmp_send[2][0][index]
                         # If the target node is others, check whether the target node
                         if self.node_object[str(target_id)].sleep_mode != 1:
                             self.node_object[str(i)].send_queue.remove(tmp_send)
-                            if tmp_send[0][1] == 1:
+                            if tmp_send[0][1] == 1 or tmp_send[0][1] == 0:
                                 tmp_send[2][1] += 1
                             else:
                                 tmp_send[2][1] -= 1
@@ -275,7 +282,6 @@ class NetworkMPC(Network):
                 self.node_object[str(i)].receive_queue.remove(tmp_receive)
                 # Check if itself is the target node, if not append the packet to the send queue
                 if tmp_receive[1][1] != self.node_object[str(i)].node_id:
-                    tmp_receive[2][1] += 1
                     self.node_object[str(i)].send_queue.append(tmp_receive)
                 else:
                     # Check the type of packet, generate pong packet and source to the sink if TYPE = 1
@@ -319,7 +325,7 @@ class NetworkMPC(Network):
 
     def performance_analysis(self):
         self.sink_node_analysis()
-        #self.network_analysis()
+        self.network_analysis()
 
     def sink_node_analysis(self):
         # Calculate data throughput
@@ -348,19 +354,20 @@ class NetworkMPC(Network):
         self.mean_delay[-1] = np.mean(self.transmit_delay) if self.transmit_delay else 0
 
     def network_analysis(self):
-        for i in range(0, self.node_number):
-            self.traffic[i] += len(self.node_object[str(i+1)].send_queue)
+        for i in range(1, self.node_number+self.server_number):
+            consume = self.node_object[str(0)].node_energy - self.node_object[str(i)].node_energy
+            self.traffic[i-1] = consume/self.transmit_energy
 
     def _debug(self):
         print("===============" + "TIME: " + str(self.time) + "==================")
         print(self.raw_throughput, self.fine_throughput, self.transmit_delay)
-        '''for i in range(0, self.node_number+self.server_number):
+        for i in range(0, self.node_number+self.server_number):
             self.node_object[str(i)].sleep_mode = 0
             print("Node " + str(i) +":")
             print(self.node_object[str(i)].receive_queue)
             print(self.node_object[str(i)].send_queue)
             print(self.node_object[str(i)].pending_queue)
-            '''
+
     def _plot(self):
         plt.clf()
         graph1 = plt.subplot(2, 2, 1)
@@ -396,12 +403,12 @@ class NetworkMPC(Network):
         plt.subplots_adjust(wspace=0.5, hspace=0.5)
         plt.pause(0.1)
 
-    def operate(self):
+    def operate(self, time_scope=10):
         """
         Simulate network transmission within given time steps
         """
-        plt.figure(2, figsize=(9, 9))
-        while self.time < self.time_scope:
+        #plt.figure(2, figsize=(9, 9))
+        while self.time < time_scope:
             self.generate_source()
             self.parse_send_queue()
             self.parse_received_queue()
@@ -409,7 +416,7 @@ class NetworkMPC(Network):
             self.time += 1
 
             #self._debug()
-            self._plot()
+            #self._plot()
 
     def store_network(self):
         np.save("x_cor.npy", np.array(self.state_xcor[:]))
@@ -422,6 +429,7 @@ class NetworkMPC(Network):
         self.state_ycor = np.load("y_cor.npy").tolist()
         self.state_link = np.load("link.npy").tolist()
         self.MPC_connectivity = np.load("mpc_connectivity.npy").tolist()
+        self.MPC_connectivity = np.array(self.MPC_connectivity)
         self.set_graph()
 
     def reset_network(self):
@@ -434,19 +442,135 @@ class NetworkMPC(Network):
         self.transmit_delay.clear()
         self.mean_delay.clear()
         self.traffic.clear()
+        self.act_hist.fill(0)
 
         for i in range(0, self.node_number + self.server_number):
             self.node_object[str(i)].reset()
         self.init_node()
         self.init_mpc()
 
+    def step(self, node_id, action):
+        self.act_action(node_id, action)
+        self.time = 0
+        self.raw_throughput.clear()
+        self.fine_throughput.clear()
+        self.transmit_delay.clear()
+        self.mean_delay.clear()
+        self.traffic.clear()
+        self.init_node()
+        self.operate(self.sampling_period)
+        reward = self.get_reward(node_id)
+        state_ = self.observer(node_id)
+        return state_, reward
+
+    def observer(self, node_id):
+        """
+        state = list()
+        nei = [n for n in self.state_G.neighbors(node_id)]
+        if 0 in nei:
+            nei.remove(0)
+        num_sharing_node = np.count_nonzero(self.MPC_connectivity[node_id])
+        state.append(num_sharing_node / len(nei))
+        """
+
+        state = list()
+        for i in range(1, self.node_number+self.server_number):
+            nei = [n for n in self.state_G.neighbors(i)]
+            if 0 in nei:
+                nei.remove(0)
+            num_sharing_node = np.count_nonzero(self.MPC_connectivity[i])
+            state.append(num_sharing_node / len(nei))
+        state = np.reshape(state, [1, self.node_number])[0]
+
+        state = np.append(state, self.act_hist)
+
+        """
+        load = np.zeros(self.node_number)
+        load_index = np.argsort(self.traffic)
+        j = 0
+        for i in load_index:
+            load[i] = self.traffic_space[j]
+            j += 1
+        state = np.append(state, load)
+        #load = (load - np.mean(load))/np.std(load)
+        #load = (load - np.mean(load))/(np.max(load) - np.min(load))
+        state = self.MPC_connectivity[1:, 1:].copy()
+        state = np.reshape(state, [1, (self.node_number)**2])[0]
+        state = np.append(state, self.mean_delay[-1])
+        #state = np.append(state, self.mean_delay[-1])
+        """
+        state = np.append(state, 0)
+        state = state[np.newaxis]
+
+        return state
+
+    def act_action(self, node_id, action):
+        # 0， 0.2， 0.4， 0.6， 0.8， 1
+        self.act_hist[node_id-1] = self.act_sapce[action]
+        nei = [n for n in self.state_G.neighbors(node_id)]
+        if 0 in nei:
+            nei.remove(0)
+        connectivity = self.MPC_connectivity[node_id]
+
+        per = action/5
+        num = int(np.floor(len(nei)*per))
+
+        for i in range(num):
+            connectivity[nei[i]] = 1
+
+        """
+        if action == 1:
+            for mem in nei:
+                if connectivity[mem] == 0:
+                    connectivity[mem] = 1
+                    break
+
+        elif action == 2:
+            for mem in nei:
+                if connectivity[mem] == 1:
+                    connectivity[mem] = 0
+                    break
+        """
+
+
+    def get_reward(self, node_id):
+        privacy = list()
+        for i in range(1, self.node_number+self.server_number):
+            nei = [n for n in self.state_G.neighbors(i)]
+            if 0 in nei:
+                nei.remove(0)
+            num_sharing_node = np.count_nonzero(self.MPC_connectivity[i])
+            privacy.append(num_sharing_node / len(nei))
+
+        load = self.traffic.copy()
+        #load = (load - np.mean(load)) / (np.max(load) - np.min(load))
+        load = (load - np.mean(load)) / np.std(load)
+        load = -1*load
+        reward = np.dot(privacy, load)
+        #reward = privacy[node_id-1]
+
+        #reward = np.sum(privacy)
+        #reward += 75/self.mean_delay[-1]
+        #reward = -1*self.mean_delay[-1]
+        return reward
 
 if __name__ == "__main__":
-    net = NetworkMPC(10)
-    for episod in range(0, 2):
-        plt.ion()
-        net.draw_network()
-        net.reset_network()
-        net.operate()
-        plt.ioff()
+    net = NetworkMPC()
+    plt.ion()
+    net.draw_network()
+    net.store_network()
+
+    print(net.MPC_connectivity)
+
+    privacy = list()
+    for i in range(1, net.node_number + net.server_number):
+        nei = [n for n in net.state_G.neighbors(i)]
+        if 0 in nei:
+            nei.remove(0)
+        num_sharing_node = np.count_nonzero(net.MPC_connectivity[i])
+        privacy.append(num_sharing_node / len(nei))
+    print(privacy)
+    net.operate(50)
+    plt.ioff()
+    plt.show()
     #net.store_network()

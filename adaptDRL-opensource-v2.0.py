@@ -6,18 +6,17 @@ os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 import sys
-import keras
 import numpy as np
 import random
 import json
 import math
 import networkx as nx
 import matplotlib.pyplot as plt
-from keras.models import Sequential
-from keras.layers import Dense, Activation, Flatten
-from keras.optimizers import sgd
-from keras.models import model_from_json
-from keras.optimizers import Adam
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Activation, Flatten
+from tensorflow.keras.optimizers import Adam
+
 
 class Cluster(object):
     def __init__(self):
