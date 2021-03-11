@@ -3,7 +3,7 @@ import random
 import copy
 import networkx as nx
 import matplotlib.pyplot as plt
-from MPC_clustering import NetworkMPC
+from Network_dynamic_object import NetworkMPC
 
 GRID_DISTANCE = 10         # The network is divided into numerous of grids, each grid contains one node
 GRID_NODE_NUM_X = 5        # Number of girds/nodes in x axis

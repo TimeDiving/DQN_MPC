@@ -11,7 +11,7 @@ from tensorflow.keras.optimizers import Adam
 import tensorflow.keras.backend as K
 
 from TestNet1 import TestNet
-from Network_dynamic import NetworkMPC
+from Network_dynamic_b import NetworkMPC
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Use cpu
 #os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"    # Limit GPU storage
 
@@ -23,10 +23,10 @@ class DQN(object):
             learning_rate=0.001,
             reward_decay=0.9,
             e_greedy=1,
-            epsilon_decay = 0.97,
+            epsilon_decay = 0.995,
             epsilon_min = 0.001,
-            replace_target_iter=5,
-            memory_size=1000,
+            replace_target_iter=10,
+            memory_size=2000,
             batch_size=32,
     ):
         self.n_features = n_features
@@ -52,14 +52,14 @@ class DQN(object):
         # create target network
         self.target_network = self._build_model(self.n_features, self.n_actions)
 
-    def _build_model(self, input_size, output_size, hidden_size0=100, hidden_size1=50):
+    def _build_model(self, input_size, output_size, hidden_size0=200, hidden_size1=10):
         if self.dueling_dqn:
             inputs = Input(shape=(input_size,))
             x = Dense(hidden_size0, activation='relu')(inputs)
             x = Dense(hidden_size1, activation='relu')(x)
 
-            value = Dense(5, activation='linear')(x)
-            a = Dense(5, activation='linear')(x)
+            value = Dense(3, activation='linear')(x)
+            a = Dense(3, activation='linear')(x)
             mean = Lambda(lambda  x: K.mean(x, axis=1, keepdims=True))(a)
             advantage = Subtract()([a, mean])
 
@@ -124,23 +124,23 @@ class DQN(object):
 
 if __name__ == "__main__":
     env = NetworkMPC(True)
-    #env.reuse_network()
     env.draw_network()
     print(env.MPC_connectivity)
 
     loss_history = list()
     reward_history = list()
 
-    agent = DQN((env.node_number-1)**2+(env.node_number-1)+1, 5)
+    agent = DQN((env.node_number-1)**2+(env.node_number-1)*1+1, 3)
 
     episodes = 300
+    step = 0
     for e in range(episodes):
         env.reset_network()
         state = env.observer(1)
         reward_sum = 0
         tmp = 0
 
-        for t in range(4):
+        for t in range(20):
             for i in range(1, env.node_number):
                 action = agent.act(state)
                 state_, reward = env.step(i, action)
@@ -148,37 +148,22 @@ if __name__ == "__main__":
                 agent.remember((state, action, reward, state_))
                 state = state_
                 tmp = reward
-        print(tmp)
-        reward_sum = reward_sum/(4*(env.node_number-1))
+            if (t+1)%5 == 0:
+                step += 1
+                print(tmp)
+                reward_sum = reward_sum/(5*(env.node_number-1))
 
-        loss = agent.replay()
-        agent.update_epsilon()
-        print("Episode {}: {} | Reward: {}".format(e, loss, reward_sum))
-        print("State: {} | Epsilon：{}".format(env.act_hist, agent.epsilon))
+                loss = agent.replay()
+                agent.update_epsilon()
+                print("Step {}: {} | Reward: {}".format(step, loss, reward_sum))
+                print("State: {} | Epsilon：{}".format(env.act_hist, agent.epsilon))
 
-        loss_history.append(loss)
-        reward_history.append(reward_sum)
+                loss_history.append(loss)
+                reward_history.append(reward_sum)
+                reward_sum = 0
 
     print(env.MPC_connectivity)
     print("Act_history:{}".format(env.act_hist))
-
-    plt.ion()
-    x = [n for n in range(1, env.node_number)]
-    p = list()
-    for i in range(1, env.node_number):
-        num_sharing_node = np.count_nonzero(env.MPC_connectivity[i])
-        p.append(num_sharing_node / 5)
-
-    b = 1 - abs(env.traffic - np.mean(env.traffic)) / np.mean(env.traffic)
-
-    #H = 1 - (np.array(env.traffic) - np.array(env.min_load)) / (np.array(env.max_load) - np.array(env.min_load))
-    plt.plot(x, p, 'g--')
-    plt.plot(x, b, 'r--')
-    plt.xticks(np.arange(1,env.node_number, 1))
-    plt.ylabel('Indicators')
-    plt.xlabel('Node ID')
-    plt.ioff()
-    plt.show()
 
     plt.ion()
     env.draw_network()
@@ -195,5 +180,8 @@ if __name__ == "__main__":
     plt.grid()
     plt.ioff()
     plt.show()
+
+
+
 
 

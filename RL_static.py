@@ -11,7 +11,7 @@ from tensorflow.keras.optimizers import Adam
 import tensorflow.keras.backend as K
 
 from TestNet1 import TestNet
-from MPC_clustering import NetworkMPC
+from Network_static_object import NetworkMPC
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Use cpu
 #os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"    # Limit GPU storage
 
